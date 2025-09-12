@@ -1,0 +1,161 @@
+import React, { useEffect } from 'react';
+import { User } from '@/api/entities';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Check, ArrowRight, UserCheck, School, BookOpen, Mail, Lock } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
+import { Input } from '@/components/ui/input';
+
+const Feature = ({ icon, title, description }) => (
+  <div className="flex gap-4">
+    <div className="flex-shrink-0">
+      <div className="flex items-center justify-center h-12 w-12 rounded-md bg-green-500 text-white">
+        {icon}
+      </div>
+    </div>
+    <div>
+      <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+      <p className="mt-1 text-gray-600">{description}</p>
+    </div>
+  </div>
+);
+
+const GoogleIcon = () => (
+  <svg className="w-5 h-5 mr-3" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <title>Google</title>
+    <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.85 3.18-1.73 4.1-1.05 1.05-2.48 1.68-4.34 1.68-3.66 0-6.6-3-6.6-6.6s2.94-6.6 6.6-6.6c1.93 0 3.33.72 4.14 1.48l2.5-2.5C18.17 2.09 15.65 1 12.48 1 7.02 1 3 5.02 3 10.5s4.02 9.5 9.48 9.5c2.82 0 5.2-1 6.9-2.73 1.76-1.79 2.5-4.35 2.5-6.81 0-.57-.05-.96-.12-1.32H12.48z" fill="currentColor"/>
+  </svg>
+);
+
+const AppleIcon = () => (
+  <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path d="M15.226 1.343a5.215 5.215 0 0 0-4.237 2.043c-.88.975-1.52 2.45-1.52 3.925 0 2.212.986 3.308 2.043 3.308.88 0 1.52-.787 2.547-1.425.93-.537 1.95-1.237 2.972-1.05 1.2.225 2.137.88 2.875 1.52.88.78 1.325 1.85 1.325 2.925 0 2.04-1.225 3.518-2.572 4.387-.985.63-2.069.96-2.971.96-1.028 0-2.16-.329-3.07-.96-.911-.63-.96-1.21-.96-1.21s.045-2.437.96-3.307c.82-.78 2.09-1.215 3.015-1.215a.4.4 0 0 1 .045.877c-.82.09-1.815.48-2.457 1.125-.687.675-.78 1.425-.78 1.425s-.044 1.282 1.072 2.122c.985.742 2.112.96 2.875.96.865 0 1.9-.322 2.78-.96.985-.735 1.86-2.085 1.86-3.832 0-1.52-.644-2.83-1.662-3.66-1.02-.832-2.348-1.26-3.518-1.05-.98.18-1.815.742-2.662 1.282-.9.538-1.614 1.17-2.456 1.17-.843 0-1.568-.832-1.568-2.547 0-1.9.82-3.615 1.755-4.575a4.35 4.35 0 0 1 3.562-1.95c1.178 0 2.21.442 2.972 1.125a.39.39 0 0 1-.044.644c-.135-.09-.315-.18-.54-.18-.812 0-1.65.538-2.412 1.335z"/>
+  </svg>
+);
+
+export default function Welcome() {
+  const navigate = useNavigate();
+
+  // Check if user is already logged in and redirect appropriately
+  useEffect(() => {
+    const checkUserStatus = async () => {
+      try {
+        const user = await User.me();
+        if (user) {
+          // User is logged in
+          if (!user.onboarding_completed) {
+            // User hasn't completed onboarding, redirect to onboarding
+            navigate(createPageUrl('Onboarding'));
+          } else {
+            // User has completed onboarding, redirect to dashboard
+            navigate(createPageUrl('Dashboard'));
+          }
+        }
+      } catch (error) {
+        // User is not logged in, stay on welcome page
+        console.log('User not logged in, showing welcome page');
+      }
+    };
+
+    checkUserStatus();
+  }, [navigate]);
+
+  const handleLogin = async () => {
+    try {
+      await User.login();
+      // After successful login, check user status and redirect
+      setTimeout(async () => {
+        try {
+          const user = await User.me();
+          if (user) {
+            if (!user.onboarding_completed) {
+              navigate(createPageUrl('Onboarding'));
+            } else {
+              navigate(createPageUrl('Dashboard'));
+            }
+          }
+        } catch (error) {
+          console.error('Error checking user status after login:', error);
+        }
+      }, 1000);
+    } catch (error) {
+      console.error("Login failed:", error);
+    }
+  };
+
+  const handleUnsupportedAuth = () => {
+    alert("This sign-in method is not yet available. Please use 'Continue with Google' for now.");
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50">
+      <div className="relative isolate px-6 pt-14 lg:px-8">
+        <div className="mx-auto max-w-4xl py-16 sm:py-24">
+          <Card className="p-8 sm:p-12 shadow-2xl rounded-2xl bg-white/80 backdrop-blur-lg">
+            <div className="text-center">
+              <img
+                  src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/52125f446_GP2withnameTransparent.png"
+                  alt="GreenPass Super App"
+                  className="h-12 sm:h-16 w-auto mx-auto mb-6"
+              />
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-gray-900">
+                Your Journey to Canada Starts Here
+              </h1>
+              <p className="mt-6 text-lg leading-8 text-gray-600">
+                Sign in or create an account to unlock your personalized study abroad dashboard.
+              </p>
+            </div>
+            
+            <div className="mt-10 max-w-md mx-auto">
+              <div className="space-y-4">
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <Input type="email" placeholder="Email address" className="pl-10 h-12" />
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <Input type="password" placeholder="Password" className="pl-10 h-12" />
+                </div>
+                <Button size="lg" className="w-full h-12 text-base" onClick={handleUnsupportedAuth}>
+                  Continue with Email
+                </Button>
+              </div>
+
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="bg-white/80 px-2 text-gray-500">OR</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Button size="lg" variant="outline" className="w-full h-12 text-base" onClick={handleLogin}>
+                  <GoogleIcon />
+                  Continue with Google
+                </Button>
+                <Button size="lg" variant="outline" className="w-full h-12 text-base bg-black text-white hover:bg-gray-800 hover:text-white" onClick={handleUnsupportedAuth}>
+                  <AppleIcon />
+                  Continue with Apple
+                </Button>
+              </div>
+            </div>
+
+             <div className="mt-8 text-center text-sm text-gray-500">
+                By continuing, you agree to our{' '}
+                <Link to={createPageUrl('TermsOfService')} className="font-semibold text-green-600 hover:text-green-500">
+                    Terms of Service
+                </Link>
+                {' '}and{' '}
+                 <Link to={createPageUrl('PrivacyPolicy')} className="font-semibold text-green-600 hover:text-green-500">
+                    Privacy Policy
+                </Link>.
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
