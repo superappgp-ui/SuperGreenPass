@@ -164,7 +164,7 @@ import ComparePrograms from "@/pages/ComparePrograms";
 
 import MarketplaceOrderSuccess from "@/pages/MarketplaceOrderSuccess";
 
-import AdminAgentAssignments from "@/AdminAgentAssignments";
+import AdminAgentAssignments from "@/pages/AdminAgentAssignments";
 
 import { BrowserRouter as Router, Route, Routes, useLocation, Navigate } from 'react-router-dom';
 

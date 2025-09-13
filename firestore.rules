@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.user_type == "admin";
+    }
+
+    function hasOneOf(v, arr) {
+      return arr.hasAny([v]);
+    }
+
+    function isUserDocCreateValid() {
+      let d = request.resource.data;
+
+      // required
+      return
+        d.role is string &&
+        d.email is string &&
+        d.full_name is string &&
+
+        // enums / defaults (if client sets them)
+        (!('user_type' in d) || hasOneOf(d.user_type, ['user','student','agent','tutor','school','admin','vendor'])) &&
+
+        // optionals: type-check only if present
+        (!('phone' in d) || d.phone is string) &&
+        (!('country' in d) || d.country is string) &&
+        (!('profile_picture' in d) || d.profile_picture is string) &&
+
+        (!('address' in d) || (
+          d.address is map &&
+          (!('street' in d.address) || d.address.street is string) &&
+          (!('ward' in d.address) || d.address.ward is string) &&
+          (!('district' in d.address) || d.address.district is string) &&
+          (!('province' in d.address) || d.address.province is string) &&
+          (!('postal_code' in d.address) || d.address.postal_code is string)
+        )) &&
+
+        (!('is_verified' in d) || d.is_verified is bool) &&
+        (!('onboarding_completed' in d) || d.onboarding_completed is bool) &&
+        (!('kyc_document_id' in d) || d.kyc_document_id is string) &&
+        (!('kyc_document_url' in d) || d.kyc_document_url is string) &&
+        (!('assigned_agent_id' in d) || d.assigned_agent_id is string) &&
+        (!('referred_by_agent_id' in d) || d.referred_by_agent_id is string) &&
+        (!('purchased_packages' in d) || d.purchased_packages is list) &&
+        (!('purchased_tutor_packages' in d) || d.purchased_tutor_packages is list) &&
+        (!('session_credits' in d) || d.session_credits is number) &&
+
+        (!('settings' in d) || (
+          d.settings is map &&
+          (!('language' in d.settings) || hasOneOf(d.settings.language, ['en','vi'])) &&
+          (!('timezone' in d.settings) || d.settings.timezone is string) &&
+          (!('currency' in d.settings) || hasOneOf(d.settings.currency, ['USD','VND','CAD'])) &&
+          (!('notification_preferences' in d.settings) || (
+            d.settings.notification_preferences is map &&
+            (!('email_notifications' in d.settings.notification_preferences) || d.settings.notification_preferences.email_notifications is bool) &&
+            (!('sms_notifications' in d.settings.notification_preferences) || d.settings.notification_preferences.sms_notifications is bool) &&
+            (!('application_updates' in d.settings.notification_preferences) || d.settings.notification_preferences.application_updates is bool) &&
+            (!('marketing_emails' in d.settings.notification_preferences) || d.settings.notification_preferences.marketing_emails is bool) &&
+            (!('session_reminders' in d.settings.notification_preferences) || d.settings.notification_preferences.session_reminders is bool)
+          ))
+        )) &&
+
+        (!('agent_reassignment_request' in d) || (
+          d.agent_reassignment_request is map &&
+          (!('reason' in d.agent_reassignment_request) || d.agent_reassignment_request.reason is string) &&
+          (!('new_agent_id' in d.agent_reassignment_request) || d.agent_reassignment_request.new_agent_id is string) &&
+          (!('status' in d.agent_reassignment_request) || hasOneOf(d.agent_reassignment_request.status, ['pending','approved','rejected']))
+        )) &&
+
+        (!('is_guest_created' in d) || d.is_guest_created is bool);
+    }
+
+    match /users/{uid} {
+
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+
+      // Create: user creates their own doc; validate shape
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && isUserDocCreateValid();
+
+      // Update: owner can update most fields; admin can update anything
+      allow update: if request.auth != null
+                    && (
+                      // Owner can update but NOT privileged flags:
+                      (request.auth.uid == uid
+                        && !( 'role' in request.resource.data.diff(resource.data).changedKeys() )
+                        && !( 'is_verified' in request.resource.data.diff(resource.data).changedKeys() )
+                        && !( 'user_type' in request.resource.data.diff(resource.data).changedKeys() )
+                        && isUserDocCreateValid()
+                      )
+                      ||
+                      // Admin can update anything (still validate types)
+                      (isAdmin() && isUserDocCreateValid())
+                    );
+
+      // Delete: admin only
+      allow delete: if isAdmin();
+    }
+  }
+}

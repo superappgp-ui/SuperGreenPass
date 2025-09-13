@@ -1,15 +1,21 @@
-
+// src/pages/Dashboard.jsx
 import React, { useState, useEffect } from 'react';
-import { User } from '@/api/entities';
 import { Loader2, AlertTriangle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
+
+// Firebase
+import { auth, db } from '@/firebase'; // <- your firebase.js exports
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+
+// Dashboards
 import AdminDashboard from '../components/dashboards/AdminDashboard';
 import AgentDashboard from '../components/dashboards/AgentDashboard';
 import SchoolDashboard from '../components/dashboards/SchoolDashboard';
 import StudentDashboard from '../components/dashboards/StudentDashboard';
 import TutorDashboard from '../components/dashboards/TutorDashboard';
 import VendorDashboard from '../components/dashboards/VendorDashboard';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
 
 export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -18,24 +24,42 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchUser = async () => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        // No Firebase user logged in → redirect to Home
+        navigate(createPageUrl('Home'));
+        setLoading(false);
+        return;
+      }
+
       try {
-        const user = await User.me();
-        setCurrentUser(user);
-      } catch (e) {
-        // Check if it's a 401 Unauthorized error
-        if (e?.response?.status === 401) {
-          // User is not logged in, redirect to the home page.
-          navigate(createPageUrl('Home'));
-          return; // Stop further processing
+        // Try to load extended profile from Firestore
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (userSnap.exists()) {
+          setCurrentUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            ...userSnap.data(), // should include user_type, onboarding_completed, etc.
+          });
+        } else {
+          // No profile doc exists → fallback to basic Firebase user
+          setCurrentUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            user_type: 'student', // default role if none set
+          });
         }
-        console.error("Failed to fetch current user", e);
-        setError("Could not load user information. Please try refreshing the page.");
+      } catch (e) {
+        console.error('Error fetching user profile from Firestore:', e);
+        setError('Could not load user information. Please try refreshing the page.');
       } finally {
         setLoading(false);
       }
-    };
-    fetchUser();
+    });
+
+    return () => unsubscribe();
   }, [navigate]);
 
   if (loading) {
@@ -57,7 +81,7 @@ export default function Dashboard() {
   }
 
   if (!currentUser) {
-    // This state can be hit briefly during redirection, or if the request fails for non-401 reasons.
+    // This state can be hit briefly during redirection or Firestore fetch
     return (
       <div className="flex min-h-[80vh] items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-gray-400" />
