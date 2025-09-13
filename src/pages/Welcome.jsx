@@ -1,25 +1,21 @@
-import React, { useEffect } from 'react';
-import { User } from '@/api/entities';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Check, ArrowRight, UserCheck, School, BookOpen, Mail, Lock } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Mail, Lock } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Input } from '@/components/ui/input';
 
-const Feature = ({ icon, title, description }) => (
-  <div className="flex gap-4">
-    <div className="flex-shrink-0">
-      <div className="flex items-center justify-center h-12 w-12 rounded-md bg-green-500 text-white">
-        {icon}
-      </div>
-    </div>
-    <div>
-      <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-      <p className="mt-1 text-gray-600">{description}</p>
-    </div>
-  </div>
-);
+// 🔥 Firebase
+import { auth } from '@/firebase';
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
+} from 'firebase/auth';
 
 const GoogleIcon = () => (
   <svg className="w-5 h-5 mr-3" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -37,50 +33,49 @@ const AppleIcon = () => (
 export default function Welcome() {
   const navigate = useNavigate();
 
-  // Check if user is already logged in and redirect appropriately
-  useEffect(() => {
-    const checkUserStatus = async () => {
-      try {
-        const user = await User.me();
-        if (user) {
-          // User is logged in
-          if (!user.onboarding_completed) {
-            // User hasn't completed onboarding, redirect to onboarding
-            navigate(createPageUrl('Onboarding'));
-          } else {
-            // User has completed onboarding, redirect to dashboard
-            navigate(createPageUrl('Dashboard'));
-          }
-        }
-      } catch (error) {
-        // User is not logged in, stay on welcome page
-        console.log('User not logged in, showing welcome page');
-      }
-    };
+  // local state for email/password
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
 
-    checkUserStatus();
+  // Redirect when auth state changes
+  useEffect(() => {
+    // persist login across tabs and reloads
+    setPersistence(auth, browserLocalPersistence).catch(() => {});
+    const unsub = onAuthStateChanged(auth, (fbUser) => {
+      if (fbUser) {
+        // TODO: fetch your app user profile if needed, and check onboarding flag there.
+        // For now, route to Dashboard; change to your real logic.
+        navigate(createPageUrl('Dashboard'));
+      }
+    });
+    return () => unsub();
   }, [navigate]);
 
-  const handleLogin = async () => {
+  const handleLoginGoogle = async () => {
     try {
-      await User.login();
-      // After successful login, check user status and redirect
-      setTimeout(async () => {
-        try {
-          const user = await User.me();
-          if (user) {
-            if (!user.onboarding_completed) {
-              navigate(createPageUrl('Onboarding'));
-            } else {
-              navigate(createPageUrl('Dashboard'));
-            }
-          }
-        } catch (error) {
-          console.error('Error checking user status after login:', error);
-        }
-      }, 1000);
-    } catch (error) {
-      console.error("Login failed:", error);
+      setBusy(true);
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      // onAuthStateChanged will handle the redirect
+    } catch (err) {
+      console.error('Google sign-in failed:', err);
+      alert(err.message || 'Google sign-in failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLoginEmail = async () => {
+    try {
+      setBusy(true);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      // onAuthStateChanged will handle the redirect
+    } catch (err) {
+      console.error('Email sign-in failed:', err);
+      alert(err.message || 'Email sign-in failed');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -95,9 +90,9 @@ export default function Welcome() {
           <Card className="p-8 sm:p-12 shadow-2xl rounded-2xl bg-white/80 backdrop-blur-lg">
             <div className="text-center">
               <img
-                  src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/52125f446_GP2withnameTransparent.png"
-                  alt="GreenPass Super App"
-                  className="h-12 sm:h-16 w-auto mx-auto mb-6"
+                src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/52125f446_GP2withnameTransparent.png"
+                alt="GreenPass Super App"
+                className="h-12 sm:h-16 w-auto mx-auto mb-6"
               />
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-gray-900">
                 Your Journey to Canada Starts Here
@@ -106,18 +101,35 @@ export default function Welcome() {
                 Sign in or create an account to unlock your personalized study abroad dashboard.
               </p>
             </div>
-            
+
             <div className="mt-10 max-w-md mx-auto">
               <div className="space-y-4">
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <Input type="email" placeholder="Email address" className="pl-10 h-12" />
+                  <Input
+                    type="email"
+                    placeholder="Email address"
+                    className="pl-10 h-12"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <Input type="password" placeholder="Password" className="pl-10 h-12" />
+                  <Input
+                    type="password"
+                    placeholder="Password"
+                    className="pl-10 h-12"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
                 </div>
-                <Button size="lg" className="w-full h-12 text-base" onClick={handleUnsupportedAuth}>
+                <Button
+                  size="lg"
+                  className="w-full h-12 text-base"
+                  onClick={handleLoginEmail}
+                  disabled={busy}
+                >
                   Continue with Email
                 </Button>
               </div>
@@ -132,26 +144,37 @@ export default function Welcome() {
               </div>
 
               <div className="space-y-3">
-                <Button size="lg" variant="outline" className="w-full h-12 text-base" onClick={handleLogin}>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full h-12 text-base"
+                  onClick={handleLoginGoogle}
+                  disabled={busy}
+                >
                   <GoogleIcon />
                   Continue with Google
                 </Button>
-                <Button size="lg" variant="outline" className="w-full h-12 text-base bg-black text-white hover:bg-gray-800 hover:text-white" onClick={handleUnsupportedAuth}>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full h-12 text-base bg-black text-white hover:bg-gray-800 hover:text-white"
+                  onClick={handleUnsupportedAuth}
+                >
                   <AppleIcon />
                   Continue with Apple
                 </Button>
               </div>
             </div>
 
-             <div className="mt-8 text-center text-sm text-gray-500">
-                By continuing, you agree to our{' '}
-                <Link to={createPageUrl('TermsOfService')} className="font-semibold text-green-600 hover:text-green-500">
-                    Terms of Service
-                </Link>
-                {' '}and{' '}
-                 <Link to={createPageUrl('PrivacyPolicy')} className="font-semibold text-green-600 hover:text-green-500">
-                    Privacy Policy
-                </Link>.
+            <div className="mt-8 text-center text-sm text-gray-500">
+              By continuing, you agree to our{' '}
+              <Link to={createPageUrl('TermsOfService')} className="font-semibold text-green-600 hover:text-green-500">
+                Terms of Service
+              </Link>{' '}
+              and{' '}
+              <Link to={createPageUrl('PrivacyPolicy')} className="font-semibold text-green-600 hover:text-green-500">
+                Privacy Policy
+              </Link>.
             </div>
           </Card>
         </div>
