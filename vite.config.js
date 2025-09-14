@@ -23,5 +23,6 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 4000,
+    reportCompressedSize: true,
   },
 }) 
