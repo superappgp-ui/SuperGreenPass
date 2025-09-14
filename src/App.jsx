@@ -14,7 +14,7 @@ import EventsPage from "@/pages/Events";
 import Blog from "@/pages/Blog";
 import Partnership from "./pages/Partnership";
 import FAQ from "./pages/FAQ";
-import ContactPage from "@/pages/Contact";
+import ContactPage from "./pages/Contact";
 import Resources from "./pages/Resources";
 import OurTeam from "./pages/OurTeam";
 import EventDetails from "./pages/EventDetails";
