@@ -21,8 +21,4 @@ export default defineConfig({
       },
     },
   },
-  // ⬇️ increase the warning threshold to 1600 kB
-  build: {
-    chunkSizeWarningLimit: 1600,
-  },
-})
+}) 
