@@ -33,7 +33,6 @@ export default function SchoolForm({ school, onSave, onCancel }) {
     is_featured: false,
     ...school,
     // Ensure array fields are converted to strings for the form
-    intake_dates: school?.intake_dates?.join(', ') || '',
   });
   
   const [uploadingLogo, setUploadingLogo] = useState(false);
