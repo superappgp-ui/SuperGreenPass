@@ -6,13 +6,13 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   server: {
-    allowedHosts: true
+    allowedHosts: true,
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
-    extensions: ['.mjs', '.js', '.jsx', '.ts', '.tsx', '.json']
+    extensions: ['.mjs', '.js', '.jsx', '.ts', '.tsx', '.json'],
   },
   optimizeDeps: {
     esbuildOptions: {
@@ -21,4 +21,8 @@ export default defineConfig({
       },
     },
   },
-}) 
+  // ⬇️ increase the warning threshold to 1600 kB
+  build: {
+    chunkSizeWarningLimit: 1600,
+  },
+})
