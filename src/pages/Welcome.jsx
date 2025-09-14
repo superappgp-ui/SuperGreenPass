@@ -2,22 +2,25 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Mail, Lock, LogOut, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, User as UserIcon } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Input } from '@/components/ui/input';
 
 // 🔥 Firebase
-import { auth } from '@/firebase';
+import { auth, db } from '@/firebase';
 import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+  updateProfile,
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
-  signOut,
 } from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const GoogleIcon = () => (
   <svg className="w-5 h-5 mr-3" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -29,78 +32,188 @@ const GoogleIcon = () => (
   </svg>
 );
 
-const AppleIcon = () => (
-  <svg className="w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <path d="M15.226 1.343a5.215 5.215 0 0 0-4.237 2.043c-.88.975-1.52 2.45-1.52 3.925 0 2.212.986 3.308 2.043 3.308.88 0 1.52-.787 2.547-1.425.93-.537 1.95-1.237 2.972-1.05 1.2.225 2.137.88 2.875 1.52.88.78 1.325 1.85 1.325 2.925 0 2.04-1.225 3.518-2.572 4.387-.985.63-2.069.96-2.971.96-1.028 0-2.16-.329-3.07-.96-.911-.63-.96-1.21-.96-1.21s.045-2.437.96-3.307c.82-.78 2.09-1.215 3.015-1.215a.4.4 0 0 1 .045.877c-.82.09-1.815.48-2.457 1.125-.687.675-.78 1.425-.78 1.425s-.044 1.282 1.072 2.122c.985.742 2.112.96 2.875.96.865 0 1.9-.322 2.78-.96.985-.735 1.86-2.085 1.86-3.832 0-1.52-.644-2.83-1.662-3.66-1.02-.832-2.348-1.26-3.518-1.05-.98.18-1.815.742-2.662 1.282-.9.538-1.614 1.17-2.456 1.17-.843 0-1.568-.832-1.568-2.547 0-1.9.82-3.615 1.755-4.575a4.35 4.35 0 0 1 3.562-1.95c1.178 0 2.21.442 2.972 1.125a.39.39 0 0 1-.044.644c-.135-.09-.315-.18-.54-.18-.812 0-1.65.538-2.412 1.335z" />
-  </svg>
-);
+// ───────────────────────────────── helpers ─────────────────────────────────
+function buildUserDoc({ email, full_name = '' }) {
+  return {
+    role: 'user',
+    email,
+    full_name,
+    user_type: 'user',
+    phone: '',
+    country: '',
+    address: { street: '', ward: '', district: '', province: '', postal_code: '' },
+    profile_picture: '',
+    is_verified: false,
+    onboarding_completed: false,
+    kyc_document_id: '',
+    kyc_document_url: '',
+    assigned_agent_id: '',
+    referred_by_agent_id: '',
+    purchased_packages: [],
+    purchased_tutor_packages: [],
+    session_credits: 0,
+    schoolId: '',
+    programId: '',
+    enrollment_date: null,
+    agent_reassignment_request: { requested_at: null, reason: '', new_agent_id: '', status: 'pending' },
+    settings: {
+      language: 'en',
+      timezone: 'Asia/Ho_Chi_Minh',
+      currency: 'USD',
+      notification_preferences: {
+        email_notifications: true,
+        sms_notifications: false,
+        application_updates: true,
+        marketing_emails: false,
+        session_reminders: true,
+      },
+    },
+    package_assignment: { package_id: '', assigned_at: null, expires_at: null },
+    is_guest_created: false,
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  };
+}
 
+/** Create Firestore doc if missing, then route accordingly */
+async function routeAfterSignIn(navigate, fbUser) {
+  const ref = doc(db, 'users', fbUser.uid);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) {
+    await setDoc(
+      ref,
+      buildUserDoc({
+        email: fbUser.email || '',
+        full_name: fbUser.displayName || '',
+      }),
+    );
+    return navigate(createPageUrl('Onboarding'));
+  }
+
+  const profile = snap.data();
+  if (!profile?.onboarding_completed) {
+    return navigate(createPageUrl('Onboarding'));
+  }
+  return navigate(createPageUrl('Dashboard'));
+}
+
+// ───────────────────────────── component ─────────────────────────────
 export default function Welcome() {
   const navigate = useNavigate();
 
+  // “tab” state
+  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
+
+  // shared fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // signup-only fields
+  const [fullName, setFullName] = useState('');
+  const [confirm, setConfirm] = useState('');
+
   const [busy, setBusy] = useState(false);
-
-  // 🔒 auth state
   const [checking, setChecking] = useState(true);
-  const [user, setUser] = useState(null);
 
-  // ✅ Listen to Firebase auth but DO NOT auto-redirect
+  // Auth listener → do NOT auto-redirect (prevents ping-pong)
   useEffect(() => {
     let unsub = () => {};
     (async () => {
-      try {
-        await setPersistence(auth, browserLocalPersistence);
-      } catch {
-        // ignore persistence errors
-      }
-      unsub = onAuthStateChanged(auth, (fbUser) => {
-        setUser(fbUser || null);
-        setChecking(false);
-      });
+      try { await setPersistence(auth, browserLocalPersistence); } catch {}
+      unsub = onAuthStateChanged(auth, () => setChecking(false));
     })();
     return () => unsub && unsub();
   }, []);
 
+  // Google sign-in (works for both tabs)
   const handleLoginGoogle = async () => {
     try {
       setBusy(true);
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      // Navigate after successful, explicit sign-in
-      navigate(createPageUrl('Dashboard'));
+      const cred = await signInWithPopup(auth, provider);
+      await routeAfterSignIn(navigate, cred.user);
     } catch (err) {
       console.error('Google sign-in failed:', err);
-      alert(err.message || 'Google sign-in failed');
+      alert(err?.code ? `Firebase: ${err.code}` : (err?.message || 'Google sign-in failed'));
     } finally {
       setBusy(false);
     }
   };
 
-  const handleLoginEmail = async () => {
+  // ───────── Sign In (robust) ─────────
+  const handleSignInEmail = async () => {
+    const em = email.trim().toLowerCase();
     try {
       setBusy(true);
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      navigate(createPageUrl('Dashboard'));
+
+      // Try direct password login first (fast path)
+      const cred = await signInWithEmailAndPassword(auth, em, password);
+      await routeAfterSignIn(navigate, cred.user);
     } catch (err) {
-      console.error('Email sign-in failed:', err);
-      alert(err.message || 'Email sign-in failed');
+      try {
+        // Interpret the failure → which methods exist for this email?
+        const methods = await fetchSignInMethodsForEmail(auth, em);
+
+        if (err.code === 'auth/user-not-found' || methods.length === 0) {
+          alert('No account found for this email. Please sign up first.');
+          setMode('signup');
+          return;
+        }
+
+        if (methods.includes('google.com') && !methods.includes('password')) {
+          alert('This email is registered with Google. Use "Continue with Google" to sign in.');
+          return;
+        }
+
+        if (err.code === 'auth/invalid-credential') {
+          // Typically wrong password when user exists for password sign-in
+          alert('Incorrect password. If you forgot it, reset it or sign in with Google if that’s how you registered.');
+          return;
+        }
+
+        alert(err?.code ? `Firebase: ${err.code}` : (err?.message || 'Email sign-in failed.'));
+      } catch {
+        alert(err?.code ? `Firebase: ${err.code}` : (err?.message || 'Email sign-in failed.'));
+      }
     } finally {
       setBusy(false);
     }
   };
 
-  const handleUnsupportedAuth = () => {
-    alert("This sign-in method is not yet available. Please use 'Continue with Google' for now.");
-  };
-
-  const handleSignOut = async () => {
+  // ───────── Sign Up ─────────
+  const handleSignUpEmail = async () => {
     try {
-      await signOut(auth);
-      setUser(null);
-    } catch (e) {
-      console.error('Sign out failed:', e);
+      setBusy(true);
+      const em = email.trim().toLowerCase();
+
+      if (!fullName.trim()) return alert('Please enter your full name.');
+      if (password.length < 6) return alert('Password should be at least 6 characters.');
+      if (password !== confirm) return alert('Passwords do not match.');
+
+      const methods = await fetchSignInMethodsForEmail(auth, em);
+      if (methods.length > 0) {
+        alert('This email is already registered. Try signing in.');
+        setMode('signin');
+        return;
+      }
+
+      const cred = await createUserWithEmailAndPassword(auth, em, password);
+
+      // Store displayName so Firestore doc gets it on first creation
+      if (fullName.trim()) {
+        await updateProfile(cred.user, { displayName: fullName.trim() });
+      }
+
+      await routeAfterSignIn(navigate, cred.user);
+    } catch (err) {
+      console.error('Sign-up failed:', err);
+      if (err?.code === 'auth/invalid-email') alert('Please enter a valid email address.');
+      else if (err?.code === 'auth/weak-password') alert('Password should be at least 6 characters.');
+      else if (err?.code === 'auth/email-already-in-use') alert('Email already in use. Try signing in.');
+      else alert(err?.code ? `Firebase: ${err.code}` : (err?.message || 'Sign-up failed.'));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -112,6 +225,7 @@ export default function Welcome() {
     );
   }
 
+  // UI — tabbed Sign in / Sign up
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50">
       <div className="relative isolate px-6 pt-14 lg:px-8">
@@ -127,15 +241,67 @@ export default function Welcome() {
                 Your Journey to Canada Starts Here
               </h1>
               <p className="mt-6 text-lg leading-8 text-gray-600">
-                {user
-                  ? 'You are already signed in. Choose how you want to continue.'
-                  : 'Sign in or create an account to unlock your personalized study abroad dashboard.'}
+                {mode === 'signin'
+                  ? 'Welcome back! Sign in to your dashboard.'
+                  : 'Create your account to get a personalized experience.'}
               </p>
             </div>
 
-            {/* When NOT signed in: show form */}
-            {!user && (
-              <div className="mt-10 max-w-md mx-auto">
+            {/* Tabs */}
+            <div className="max-w-md mx-auto mt-8">
+              <div className="grid grid-cols-2 p-1 rounded-xl bg-gray-100 text-sm mb-6">
+                <button
+                  className={`py-2 rounded-lg transition ${
+                    mode === 'signin' ? 'bg-white shadow font-semibold' : 'text-gray-600'
+                  }`}
+                  onClick={() => setMode('signin')}
+                >
+                  Sign in
+                </button>
+                <button
+                  className={`py-2 rounded-lg transition ${
+                    mode === 'signup' ? 'bg-white shadow font-semibold' : 'text-gray-600'
+                  }`}
+                  onClick={() => setMode('signup')}
+                >
+                  Sign up
+                </button>
+              </div>
+
+              {/* Social */}
+              <div className="space-y-3 mb-6">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full h-12 text-base"
+                  onClick={handleLoginGoogle}
+                  disabled={busy}
+                >
+                  <GoogleIcon />
+                  Continue with Google
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full h-12 text-base bg-black text-white hover:bg-gray-800 hover:text-white"
+                  onClick={() => alert('Apple sign-in not available yet')}
+                >
+                  <span className="mr-3"></span>
+                  Continue with Apple
+                </Button>
+              </div>
+
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="bg-white/80 px-2 text-gray-500">or continue with email</span>
+                </div>
+              </div>
+
+              {/* Forms */}
+              {mode === 'signin' ? (
                 <div className="space-y-4">
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -160,76 +326,85 @@ export default function Welcome() {
                   <Button
                     size="lg"
                     className="w-full h-12 text-base"
-                    onClick={handleLoginEmail}
+                    onClick={handleSignInEmail}
                     disabled={busy}
                   >
-                    Continue with Email
+                    Sign in
                   </Button>
-                </div>
 
-                <div className="relative my-6">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300" />
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="bg-white/80 px-2 text-gray-500">OR</span>
-                  </div>
+                  <p className="text-center text-sm text-gray-500">
+                    Don’t have an account?{' '}
+                    <button
+                      onClick={() => setMode('signup')}
+                      className="font-semibold text-green-600 hover:text-green-500"
+                    >
+                      Sign up
+                    </button>
+                  </p>
                 </div>
-
-                <div className="space-y-3">
+              ) : (
+                <div className="space-y-4">
+                  <div className="relative">
+                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Input
+                      type="text"
+                      placeholder="Full name"
+                      className="pl-10 h-12"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                    />
+                  </div>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Input
+                      type="email"
+                      placeholder="Email address"
+                      className="pl-10 h-12"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Input
+                      type="password"
+                      placeholder="Create a password (min 6 chars)"
+                      className="pl-10 h-12"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Input
+                      type="password"
+                      placeholder="Confirm password"
+                      className="pl-10 h-12"
+                      value={confirm}
+                      onChange={(e) => setConfirm(e.target.value)}
+                    />
+                  </div>
                   <Button
                     size="lg"
-                    variant="outline"
                     className="w-full h-12 text-base"
-                    onClick={handleLoginGoogle}
+                    onClick={handleSignUpEmail}
                     disabled={busy}
                   >
-                    <GoogleIcon />
-                    Continue with Google
+                    Create account
                   </Button>
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="w-full h-12 text-base bg-black text-white hover:bg-gray-800 hover:text-white"
-                    onClick={handleUnsupportedAuth}
-                  >
-                    <AppleIcon />
-                    Continue with Apple
-                  </Button>
-                </div>
-              </div>
-            )}
 
-            {/* When ALREADY signed in: offer choices; do NOT auto-redirect */}
-            {user && (
-              <div className="mt-10 max-w-md mx-auto">
-                <div className="px-4 py-3 rounded-lg bg-green-50 text-green-800 flex items-center gap-2 mb-4">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span className="text-sm">
-                    Signed in as <span className="font-medium">{user.email || 'your account'}</span>.
-                  </span>
+                  <p className="text-center text-sm text-gray-500">
+                    Already have an account?{' '}
+                    <button
+                      onClick={() => setMode('signin')}
+                      className="font-semibold text-green-600 hover:text-green-500"
+                    >
+                      Sign in
+                    </button>
+                  </p>
                 </div>
-                <div className="grid grid-cols-1 gap-3">
-                  <Button
-                    size="lg"
-                    className="w-full h-12 text-base"
-                    onClick={() => navigate(createPageUrl('Dashboard'))}
-                  >
-                    Continue to Dashboard
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="w-full h-12 text-base"
-                    onClick={handleSignOut}
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Sign out
-                  </Button>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
 
             <div className="mt-8 text-center text-sm text-gray-500">
               By continuing, you agree to our{' '}

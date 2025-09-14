@@ -989,7 +989,7 @@ export default function Layout({ children }) {
     try {
       await signOut(auth);
       setCurrentUser(null);
-      navigate(createPageUrl("Home"));
+      navigate(createPageUrl(""));
     } catch (error) {
       console.error("Logout failed:", error);
     }

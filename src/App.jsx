@@ -17,6 +17,9 @@ import FAQ from "./pages/FAQ";
 import ContactPage from "./pages/Contact";
 import Resources from "./pages/Resources";
 import OurTeam from "./pages/OurTeam";
+import EventDetails from "./pages/EventDetails";
+import EventRegistrationPage from "./pages/EventRegistration";
+import Onboarding from "./pages/Onboarding";
 
 export default function App() {
   return (
@@ -39,9 +42,11 @@ export default function App() {
         <Route path="contact" element={<ContactPage />} />  
         <Route path="resources" element={<Resources />} />
         <Route path="ourteam" element={<OurTeam />} />
-
+        <Route path="eventdetails" element={<EventDetails />} />
+        <Route path="eventregistration" element={<EventRegistrationPage />} />
         {/* Private routes */}
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="onboarding" element={<Onboarding />} />
       </Route>
     </Routes>
   );
